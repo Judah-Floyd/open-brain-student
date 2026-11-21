@@ -161,6 +161,20 @@
     .drop:hover, .drop.over { border-color: #6366f1; background: #14142a; color: #c7c8ff; }
     .progress { height: 6px; background: #0f0f0f; border-radius: 999px; overflow: hidden; margin-top: 14px; }
     .progress > div { height: 100%; width: 0%; background: #6366f1; transition: width 0.2s; }
+    .pdf-item {
+      background: #0f0f0f; border: 1px solid #222; border-radius: 10px;
+      padding: 12px 14px; margin-top: 10px;
+    }
+    .pdf-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .pdf-head .check { min-width: 0; color: #ccc; font-size: 0.85rem; }
+    .pdf-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pdf-meta { flex-shrink: 0; text-align: right; }
+    .pdf-item .progress { margin-top: 8px; }
+    .pdf-item.done .progress { display: none; }
+    .pdf-item.error .pdf-meta { color: #ef4444; }
+    .pdf-item.saved { opacity: 0.55; }
+    .pdf-item.saved .pdf-meta { color: #22c55e; }
+    .pdf-tools { margin-top: 6px; }
 
     /* ---------- lists ---------- */
     .section-label {
@@ -331,27 +345,18 @@
     <!-- PDF -->
     <div class="panel hidden" id="panel-pdf">
       <div class="card">
-        <h2>Capture a PDF</h2>
-        <p class="lead">The text is pulled out right here in your browser. The file itself never leaves your device; only the text gets saved.</p>
+        <h2>Capture PDFs</h2>
+        <p class="lead">Drop in one PDF or a whole stack. The text is pulled out right here in your browser. The files themselves never leave your device; only the text gets saved, each PDF as its own thought.</p>
         <div class="drop" id="dropZone">
           <span class="big">📄</span>
-          <b>Drop a PDF here</b><br>or tap to choose a file
+          <b>Drop PDFs here</b><br>or tap to choose files (you can pick several)
         </div>
-        <input type="file" id="pdfFile" accept="application/pdf,.pdf" class="hidden">
-        <div id="pdfProgressWrap" class="hidden">
-          <div class="progress"><div id="pdfBar"></div></div>
-          <div class="hint" id="pdfProgressText" style="margin-top:6px"></div>
-        </div>
-        <div id="pdfReview" class="hidden">
-          <label class="field" for="pdfName">Name</label>
-          <input type="text" id="pdfName">
-          <label class="field" for="pdfText">Extracted text (edit before saving if you want)</label>
-          <textarea id="pdfText" class="tall"></textarea>
-          <div class="row" style="justify-content:flex-end"><span class="hint" id="pdfCount"></span></div>
-          <div class="row">
-            <button id="pdfBtn" onclick="savePdf()">Save to Brain</button>
-            <button class="ghost" onclick="clearPdf()">Clear</button>
-          </div>
+        <input type="file" id="pdfFile" accept="application/pdf,.pdf" multiple class="hidden">
+        <div id="pdfList"></div>
+        <div class="row hidden" id="pdfActions">
+          <button id="pdfSaveAll" onclick="savePdfs()">Save all</button>
+          <button class="ghost" id="pdfClearBtn" onclick="clearPdf()">Clear list</button>
+          <span class="hint" id="pdfSummary"></span>
         </div>
         <div class="msg" id="pdfMsg" style="margin-top:10px"></div>
       </div>
@@ -866,82 +871,225 @@
     return pdfjsLoading
   }
 
+  // Each dropped file becomes an item: queued → reading → ready / error → saved
+  let pdfItems = []
+  let pdfNextId = 1
+  let pdfBusy = false
+
   const drop = $('dropZone')
   drop.addEventListener('click', () => $('pdfFile').click())
-  $('pdfFile').addEventListener('change', e => handlePdf(e.target.files[0]))
+  $('pdfFile').addEventListener('change', e => { addPdfFiles(e.target.files); e.target.value = '' })
   ;['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over') }))
   ;['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over') }))
-  drop.addEventListener('drop', e => handlePdf(e.dataTransfer.files[0]))
+  drop.addEventListener('drop', e => addPdfFiles(e.dataTransfer.files))
   // Stop a PDF dropped anywhere else from replacing the whole app.
   window.addEventListener('dragover', e => e.preventDefault())
   window.addEventListener('drop', e => e.preventDefault())
 
-  function pdfProgress(pct, text) {
-    $('pdfProgressWrap').classList.remove('hidden')
-    $('pdfBar').style.width = pct + '%'
-    $('pdfProgressText').textContent = text
+  function isPdf(file) {
+    return file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
   }
 
-  async function handlePdf(file) {
-    if (!file) return
+  function addPdfFiles(fileList) {
+    const files = Array.from(fileList || [])
+    if (!files.length) return
     flash('pdfMsg', '')
-    $('pdfReview').classList.add('hidden')
-    if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) {
-      return flash('pdfMsg', 'That file is not a PDF.', 'err')
+    for (const file of files) {
+      const item = { id: pdfNextId++, file, name: file.name, status: 'queued', text: '', pages: 0, error: '' }
+      if (!isPdf(file)) { item.status = 'error'; item.error = 'Not a PDF' }
+      pdfItems.push(item)
+      $('pdfList').appendChild(buildPdfItem(item))
+      renderPdfItem(item)
     }
+    updatePdfSummary()
+    processPdfQueue()
+  }
+
+  function buildPdfItem(item) {
+    const el = document.createElement('div')
+    el.className = 'pdf-item'
+    el.id = 'pdf-item-' + item.id
+    el.innerHTML =
+      '<div class="pdf-head">' +
+        '<label class="check"><input type="checkbox" class="pdf-pick" checked><span class="pdf-name"></span></label>' +
+        '<span class="hint pdf-meta"></span>' +
+      '</div>' +
+      '<div class="progress"><div></div></div>' +
+      '<div class="pdf-tools hidden"><button class="more" type="button">Review / edit</button></div>' +
+      '<div class="pdf-review hidden">' +
+        '<label class="field">Name</label><input type="text" class="pdf-name-input">' +
+        '<label class="field">Extracted text (edit before saving if you want)</label>' +
+        '<textarea class="tall pdf-text"></textarea>' +
+      '</div>'
+    el.querySelector('.pdf-name').textContent = item.name
+    el.querySelector('.pdf-pick').addEventListener('change', updatePdfSummary)
+    el.querySelector('.more').addEventListener('click', () => {
+      const review = el.querySelector('.pdf-review')
+      const open = review.classList.toggle('hidden')
+      el.querySelector('.more').textContent = open ? 'Review / edit' : 'Hide text'
+    })
+    return el
+  }
+
+  function renderPdfItem(item, progressPct) {
+    const el = $('pdf-item-' + item.id)
+    if (!el) return
+    const meta = el.querySelector('.pdf-meta')
+    const pick = el.querySelector('.pdf-pick')
+    el.classList.toggle('done', item.status !== 'queued' && item.status !== 'reading')
+    el.classList.toggle('error', item.status === 'error')
+    el.classList.toggle('saved', item.status === 'saved')
+    if (progressPct != null) el.querySelector('.progress > div').style.width = progressPct + '%'
+
+    if (item.status === 'queued') meta.textContent = 'Waiting...'
+    else if (item.status === 'reading') { /* meta set by progress updates */ }
+    else if (item.status === 'ready') meta.textContent = item.pages + ' page' + (item.pages === 1 ? '' : 's') + ' · ' + item.text.length.toLocaleString() + ' chars'
+    else if (item.status === 'error') meta.textContent = '✗ ' + item.error
+    else if (item.status === 'saved') meta.textContent = '✓ Saved'
+
+    const canSave = item.status === 'ready'
+    pick.disabled = !canSave
+    if (!canSave) pick.checked = item.status === 'queued' || item.status === 'reading'
+    el.querySelector('.pdf-tools').classList.toggle('hidden', !canSave)
+    if (!canSave) el.querySelector('.pdf-review').classList.add('hidden')
+  }
+
+  async function processPdfQueue() {
+    if (pdfBusy) return
+    pdfBusy = true
+    updatePdfSummary()
     try {
-      pdfProgress(3, 'Loading the PDF reader...')
-      await loadPdfJs()
-      pdfProgress(8, 'Opening ' + file.name + '...')
-      const buf = await file.arrayBuffer()
-      const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise
-      const pages = []
-      for (let p = 1; p <= pdf.numPages; p++) {
-        const page = await pdf.getPage(p)
-        const tc = await page.getTextContent()
-        let s = ''
-        for (const item of tc.items) {
-          if (typeof item.str !== 'string') continue
-          s += item.str + (item.hasEOL ? '\n' : ' ')
+      let item
+      while ((item = pdfItems.find(i => i.status === 'queued'))) {
+        item.status = 'reading'
+        renderPdfItem(item, 2)
+        const el = $('pdf-item-' + item.id)
+        try {
+          const result = await extractPdfText(item.file, (pct, text) => {
+            if (el) el.querySelector('.pdf-meta').textContent = text
+            renderPdfItem(item, pct)
+          })
+          if (!result.text) {
+            item.status = 'error'
+            item.error = 'No text found (probably a scanned image)'
+          } else {
+            item.status = 'ready'
+            item.text = result.text
+            item.pages = result.pages
+            if (el) {
+              el.querySelector('.pdf-name-input').value = item.name
+              el.querySelector('.pdf-text').value = item.text
+            }
+          }
+        } catch (e) {
+          item.status = 'error'
+          item.error = e && e.name === 'PasswordException'
+            ? 'Password-protected'
+            : 'Could not read: ' + ((e && e.message) || e)
         }
-        pages.push(s.replace(/[ \t]{2,}/g, ' ').replace(/ *\n */g, '\n').trim())
-        pdfProgress(8 + Math.round((p / pdf.numPages) * 92), 'Reading page ' + p + ' of ' + pdf.numPages + '...')
+        renderPdfItem(item, 100)
+        updatePdfSummary()
       }
-      const text = decodeEntities(pages.filter(Boolean).join('\n\n')).replace(/\n{3,}/g, '\n\n').trim()
-      $('pdfProgressText').textContent = 'Done: ' + pdf.numPages + ' page' + (pdf.numPages === 1 ? '' : 's') + '.'
-
-      if (!text) {
-        return flash('pdfMsg', 'No text found in this PDF. It is probably a scanned image, which needs OCR (text recognition). That is not part of this level.', 'err')
-      }
-      $('pdfName').value = file.name
-      $('pdfText').value = text
-      $('pdfCount').textContent = text.length.toLocaleString() + ' characters'
-      $('pdfReview').classList.remove('hidden')
-    } catch (e) {
-      const msg = e && e.name === 'PasswordException'
-        ? 'This PDF is password-protected. Open it, save an unlocked copy, and try again.'
-        : 'Could not read this PDF: ' + (e.message || e)
-      flash('pdfMsg', msg, 'err')
     } finally {
-      $('pdfFile').value = ''
+      pdfBusy = false
+      updatePdfSummary()
     }
   }
 
-  async function savePdf() {
-    const text = decodeEntities($('pdfText').value).trim()
-    if (!text) return flash('pdfMsg', 'There is no text to save.', 'err')
-    const name = $('pdfName').value.trim() || 'Untitled PDF'
-    const ok = await runSave('pdfBtn', 'pdfMsg', () => saveThought({ content: '📄 PDF: ' + name + '\n\n' + text }))
-    if (ok) clearPdf(true)
+  async function extractPdfText(file, onProgress) {
+    onProgress(3, 'Loading PDF reader...')
+    await loadPdfJs()
+    const buf = await file.arrayBuffer()
+    const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise
+    const pages = []
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p)
+      const tc = await page.getTextContent()
+      let s = ''
+      for (const item of tc.items) {
+        if (typeof item.str !== 'string') continue
+        s += item.str + (item.hasEOL ? '\n' : ' ')
+      }
+      pages.push(s.replace(/[ \t]{2,}/g, ' ').replace(/ *\n */g, '\n').trim())
+      onProgress(5 + Math.round((p / pdf.numPages) * 95), 'Page ' + p + ' of ' + pdf.numPages)
+    }
+    const text = decodeEntities(pages.filter(Boolean).join('\n\n')).replace(/\n{3,}/g, '\n\n').trim()
+    try { pdf.destroy() } catch (_) {}
+    return { text, pages: pdf.numPages }
   }
 
-  function clearPdf(keepMsg) {
-    $('pdfText').value = ''
-    $('pdfName').value = ''
-    $('pdfCount').textContent = ''
-    $('pdfReview').classList.add('hidden')
-    $('pdfProgressWrap').classList.add('hidden')
-    if (!keepMsg) flash('pdfMsg', '')
+  function pickedPdfItems() {
+    return pdfItems.filter(i => {
+      if (i.status !== 'ready') return false
+      const el = $('pdf-item-' + i.id)
+      return el && el.querySelector('.pdf-pick').checked
+    })
+  }
+
+  function updatePdfSummary() {
+    const total = pdfItems.length
+    $('pdfActions').classList.toggle('hidden', total === 0)
+    if (!total) return
+    const count = s => pdfItems.filter(i => i.status === s).length
+    const reading = count('queued') + count('reading')
+    const parts = []
+    if (reading) parts.push('reading ' + reading + '...')
+    if (count('ready')) parts.push(count('ready') + ' ready')
+    if (count('saved')) parts.push(count('saved') + ' saved')
+    if (count('error')) parts.push(count('error') + ' with problems')
+    $('pdfSummary').textContent = total + ' file' + (total === 1 ? '' : 's') + ' · ' + parts.join(' · ')
+    const picked = pickedPdfItems().length
+    const btn = $('pdfSaveAll')
+    if (!btn.dataset.saving) {
+      btn.disabled = picked === 0
+      btn.textContent = picked > 1 ? 'Save ' + picked + ' PDFs' : 'Save to Brain'
+    }
+  }
+
+  async function savePdfs() {
+    const items = pickedPdfItems()
+    if (!items.length) return flash('pdfMsg', 'Nothing ready to save yet.', 'err')
+    const btn = $('pdfSaveAll')
+    btn.dataset.saving = '1'
+    btn.disabled = true
+    $('pdfClearBtn').disabled = true
+    flash('pdfMsg', '')
+    let saved = 0
+    const failed = []
+    for (let n = 0; n < items.length; n++) {
+      const item = items[n]
+      const el = $('pdf-item-' + item.id)
+      btn.textContent = 'Saving ' + (n + 1) + ' of ' + items.length + '...'
+      const name = (el.querySelector('.pdf-name-input').value || '').trim() || item.name || 'Untitled PDF'
+      const text = decodeEntities(el.querySelector('.pdf-text').value).trim()
+      if (!text) { failed.push(item.name + ' (no text)'); continue }
+      try {
+        await saveThought({ content: '📄 PDF: ' + name + '\n\n' + text })
+        item.status = 'saved'
+        saved++
+      } catch (e) {
+        failed.push(item.name + ' (' + ((e && e.message) || e) + ')')
+      }
+      renderPdfItem(item)
+    }
+    delete btn.dataset.saving
+    $('pdfClearBtn').disabled = false
+    updatePdfSummary()
+    if (failed.length) flash('pdfMsg', '✓ Saved ' + saved + '. ✗ Not saved: ' + failed.join('; '), 'err')
+    else flash('pdfMsg', '✓ Saved ' + saved + ' PDF' + (saved === 1 ? '' : 's') + ' to your brain', 'ok')
+  }
+
+  function clearPdf() {
+    if (pdfBusy) {
+      // Let the file being read finish, but drop everything still waiting.
+      pdfItems = pdfItems.filter(i => i.status === 'reading')
+    } else {
+      pdfItems = []
+    }
+    const keep = new Set(pdfItems.map(i => 'pdf-item-' + i.id))
+    Array.from($('pdfList').children).forEach(c => { if (!keep.has(c.id)) c.remove() })
+    flash('pdfMsg', '')
+    updatePdfSummary()
   }
 
   // =====================================================================
