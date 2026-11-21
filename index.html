@@ -2,10 +2,22 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>My Open Brain</title>
+
+  <!-- PWA: lets phones and desktop Chrome install this like a real app -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#6366f1">
+  <link rel="icon" type="image/png" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Open Brain">
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="config.js"></script>
+
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -13,11 +25,17 @@
       background: #0f0f0f;
       color: #e5e5e5;
       min-height: 100vh;
-      padding: 32px 16px;
+      padding: 28px 16px 64px;
+      padding-top: max(28px, env(safe-area-inset-top));
     }
     .container { max-width: 680px; margin: 0 auto; }
+    .hidden { display: none !important; }
 
-    header { margin-bottom: 32px; }
+    /* ---------- header ---------- */
+    header {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 12px; margin-bottom: 20px;
+    }
     h1 { font-size: 1.5rem; font-weight: 600; color: #fff; }
     .status {
       display: flex; align-items: center; gap: 8px;
@@ -35,39 +53,116 @@
       padding: 16px 18px; margin-bottom: 24px; font-size: 0.875rem;
       color: #f87171; line-height: 1.6; display: none;
     }
-    .banner code {
+    .banner code, .note code {
       background: #2a1010; padding: 1px 6px; border-radius: 4px;
       font-size: 0.8rem; font-family: monospace;
     }
 
-    .capture {
-      background: #161616; border: 1px solid #222; border-radius: 12px;
-      padding: 20px; margin-bottom: 28px;
+    /* ---------- tabs ---------- */
+    .tabs {
+      display: flex; gap: 6px; overflow-x: auto; margin-bottom: 18px;
+      padding-bottom: 4px; scrollbar-width: none;
+      position: sticky; top: 0; z-index: 5; background: #0f0f0f; padding-top: 6px;
     }
-    textarea {
-      width: 100%; background: #0f0f0f; border: 1px solid #252525;
-      border-radius: 8px; color: #e5e5e5; font-size: 0.95rem;
-      padding: 12px 14px; resize: vertical; min-height: 96px;
-      font-family: inherit; outline: none; transition: border-color 0.2s;
-      line-height: 1.5;
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab {
+      background: #161616; color: #888; border: 1px solid #222;
+      border-radius: 999px; padding: 8px 14px; font-size: 0.85rem;
+      cursor: pointer; white-space: nowrap; flex-shrink: 0; font-weight: 500;
     }
-    textarea:focus { border-color: #6366f1; }
-    textarea::placeholder { color: #383838; }
-    .row {
-      display: flex; align-items: center; gap: 12px; margin-top: 12px;
-    }
-    button {
-      background: #6366f1; color: #fff; border: none; border-radius: 8px;
-      padding: 9px 22px; font-size: 0.875rem; font-weight: 500;
-      cursor: pointer; transition: background 0.15s; white-space: nowrap;
-    }
-    button:hover:not(:disabled) { background: #5254cc; }
-    button:disabled { background: #1e1e1e; color: #444; cursor: not-allowed; }
-    .hint { font-size: 0.75rem; color: #444; }
-    .save-msg { font-size: 0.8rem; min-height: 16px; }
-    .save-msg.ok { color: #22c55e; }
-    .save-msg.err { color: #ef4444; }
+    .tab:hover { color: #ddd; background: #1c1c1c; }
+    .tab.active { background: #6366f1; color: #fff; border-color: #6366f1; }
 
+    /* ---------- cards / forms ---------- */
+    .card {
+      background: #161616; border: 1px solid #222; border-radius: 12px;
+      padding: 20px; margin-bottom: 20px;
+    }
+    .card h2 { font-size: 1rem; font-weight: 600; color: #fff; margin-bottom: 6px; }
+    .lead { font-size: 0.85rem; color: #777; line-height: 1.55; margin-bottom: 14px; }
+    .note {
+      background: #12122a; border: 1px solid #23234a; border-radius: 8px;
+      padding: 12px 14px; font-size: 0.8rem; color: #a5a8f0; line-height: 1.6;
+      margin-bottom: 14px;
+    }
+    .note ol { padding-left: 18px; }
+    .note code { background: #1d1d40; }
+    label.field { display: block; font-size: 0.75rem; color: #666; margin: 12px 0 6px; }
+
+    textarea, input[type=text], input[type=email], input[type=password], input[type=url], input[type=search], select {
+      width: 100%; background: #0f0f0f; border: 1px solid #252525;
+      border-radius: 8px; color: #e5e5e5; font-size: 16px;
+      padding: 11px 13px; font-family: inherit; outline: none;
+      transition: border-color 0.2s; line-height: 1.5;
+    }
+    textarea { resize: vertical; min-height: 110px; }
+    textarea.tall { min-height: 220px; }
+    textarea:focus, input:focus, select:focus { border-color: #6366f1; }
+    textarea::placeholder, input::placeholder { color: #3a3a3a; }
+    select { width: auto; padding: 8px 10px; font-size: 0.85rem; }
+
+    .row {
+      display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap;
+    }
+    button, .btn {
+      background: #6366f1; color: #fff; border: none; border-radius: 8px;
+      padding: 10px 20px; font-size: 0.875rem; font-weight: 500;
+      cursor: pointer; transition: background 0.15s; white-space: nowrap;
+      text-decoration: none; display: inline-block; font-family: inherit;
+    }
+    button:hover:not(:disabled), .btn:hover { background: #5254cc; }
+    button:disabled { background: #1e1e1e; color: #444; cursor: not-allowed; }
+    button.ghost, .btn.ghost {
+      background: transparent; color: #999; border: 1px solid #2a2a2a;
+    }
+    button.ghost:hover:not(:disabled), .btn.ghost:hover { background: #1c1c1c; color: #ddd; }
+    button.small { padding: 6px 12px; font-size: 0.78rem; }
+    .hint { font-size: 0.75rem; color: #555; }
+    .msg { font-size: 0.8rem; min-height: 16px; }
+    .msg.ok { color: #22c55e; }
+    .msg.err { color: #ef4444; }
+    .msg.info { color: #a5a8f0; }
+    .check { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: #888; cursor: pointer; }
+    .check input { accent-color: #6366f1; width: 16px; height: 16px; }
+
+    /* ---------- auth ---------- */
+    .auth { max-width: 400px; margin: 40px auto 0; }
+    .auth .switch { margin-top: 16px; font-size: 0.85rem; color: #666; text-align: center; }
+    .auth .switch a { color: #a5a8f0; cursor: pointer; text-decoration: underline; }
+
+    /* ---------- voice ---------- */
+    .mic-wrap { display: flex; flex-direction: column; align-items: center; gap: 12px; margin: 10px 0 18px; }
+    .mic {
+      width: 104px; height: 104px; border-radius: 50%; font-size: 2.6rem;
+      background: #1c1c3a; border: 2px solid #6366f1; padding: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .mic:hover:not(:disabled) { background: #26264d; }
+    .mic.listening { background: #6366f1; animation: pulse 1.4s ease-out infinite; }
+    @keyframes pulse {
+      0%   { box-shadow: 0 0 0 0 rgba(99,102,241,0.65); }
+      70%  { box-shadow: 0 0 0 26px rgba(99,102,241,0); }
+      100% { box-shadow: 0 0 0 0 rgba(99,102,241,0); }
+    }
+    .interim { font-size: 0.85rem; color: #6b6ef0; font-style: italic; min-height: 20px; margin-top: 8px; }
+
+    /* ---------- youtube ---------- */
+    .yt-preview { display: flex; gap: 14px; align-items: center; margin-top: 14px; }
+    .yt-preview img { width: 140px; aspect-ratio: 16/9; object-fit: cover; border-radius: 8px; background: #0f0f0f; flex-shrink: 0; }
+    .yt-meta { font-size: 0.8rem; color: #666; margin-top: 4px; }
+
+    /* ---------- pdf ---------- */
+    .drop {
+      border: 2px dashed #2e2e4a; border-radius: 12px; padding: 36px 16px;
+      text-align: center; color: #777; cursor: pointer; transition: all 0.15s;
+      font-size: 0.9rem; line-height: 1.6;
+    }
+    .drop .big { font-size: 2rem; display: block; margin-bottom: 6px; }
+    .drop:hover, .drop.over { border-color: #6366f1; background: #14142a; color: #c7c8ff; }
+    .progress { height: 6px; background: #0f0f0f; border-radius: 999px; overflow: hidden; margin-top: 14px; }
+    .progress > div { height: 100%; width: 0%; background: #6366f1; transition: width 0.2s; }
+
+    /* ---------- lists ---------- */
     .section-label {
       font-size: 0.7rem; font-weight: 600; color: #444;
       text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px;
@@ -76,126 +171,978 @@
       background: #161616; border: 1px solid #1e1e1e; border-radius: 10px;
       padding: 16px 18px; margin-bottom: 8px;
     }
-    .thought-text { font-size: 0.9rem; color: #ccc; line-height: 1.55; white-space: pre-wrap; }
-    .thought-time { font-size: 0.72rem; color: #444; margin-top: 8px; }
-    .empty { color: #333; font-size: 0.875rem; text-align: center; padding: 48px 0; }
+    .thought-text {
+      font-size: 0.9rem; color: #ccc; line-height: 1.55;
+      white-space: pre-wrap; overflow-wrap: anywhere;
+    }
+    .thought-text.clamped { max-height: 9.3em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 60%, transparent); mask-image: linear-gradient(#000 60%, transparent); }
+    .thought-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; gap: 10px; }
+    .thought-time { font-size: 0.72rem; color: #444; }
+    .more { background: none; border: none; color: #8b8ef5; font-size: 0.75rem; padding: 0; cursor: pointer; }
+    .more:hover:not(:disabled) { background: none; text-decoration: underline; }
+    mark { background: #3b3b8f; color: #fff; border-radius: 3px; padding: 0 2px; }
+    .empty { color: #3a3a3a; font-size: 0.875rem; text-align: center; padding: 40px 0; }
+    .search-row { display: flex; gap: 8px; }
+    .search-row input { flex: 1; }
+
+    @media (max-width: 480px) {
+      .card { padding: 16px; }
+      .yt-preview img { width: 110px; }
+    }
   </style>
 </head>
 <body>
 <div class="container">
 
   <header>
-    <h1>🧠 My Open Brain</h1>
-    <div class="status">
-      <div class="dot" id="dot"></div>
-      <span id="statusText">Connecting...</span>
+    <div>
+      <h1>🧠 My Open Brain</h1>
+      <div class="status">
+        <div class="dot" id="dot"></div>
+        <span id="statusText">Connecting...</span>
+      </div>
     </div>
+    <button class="ghost small hidden" id="signOutBtn" onclick="signOut()">Sign out</button>
   </header>
 
   <div class="banner" id="banner"></div>
 
-  <div class="capture">
-    <textarea id="input" placeholder="Capture anything — ideas, notes, things you learned, questions, plans..." rows="4"></textarea>
-    <div class="row">
-      <button id="saveBtn" onclick="save()" disabled>Save to Brain</button>
-      <span class="hint">or Ctrl+Enter</span>
-      <span class="save-msg" id="saveMsg"></span>
+  <!-- ================= LOGIN SCREEN ================= -->
+  <section id="authScreen" class="hidden">
+    <div class="card auth">
+      <h2 id="authTitle">Sign in to your brain</h2>
+      <p class="lead" id="authLead">Your thoughts are private. Only you can see them once you're signed in.</p>
+      <form id="authForm" onsubmit="submitAuth(event)">
+        <label class="field" for="authEmail">Email</label>
+        <input type="email" id="authEmail" autocomplete="email" required>
+        <label class="field" for="authPassword">Password</label>
+        <input type="password" id="authPassword" autocomplete="current-password" minlength="6" required>
+        <div class="row">
+          <button type="submit" id="authBtn">Sign in</button>
+          <span class="msg" id="authMsg"></span>
+        </div>
+      </form>
+      <div class="switch" id="authSwitch">
+        No account yet? <a onclick="setAuthMode('signup')">Create one</a>
+      </div>
     </div>
-  </div>
+  </section>
 
-  <div class="section-label">Recent Thoughts</div>
-  <div id="list"><div class="empty">Loading...</div></div>
+  <!-- ================= APP ================= -->
+  <section id="appScreen" class="hidden">
 
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-tab="write">✏️ Write</button>
+      <button class="tab" data-tab="voice">🎙️ Voice</button>
+      <button class="tab" data-tab="youtube">📹 YouTube</button>
+      <button class="tab" data-tab="pdf">📄 PDF</button>
+      <button class="tab" data-tab="url">🔗 URL</button>
+      <button class="tab" data-tab="search">🔍 Search</button>
+      <button class="tab" data-tab="recent">🕒 Recent</button>
+    </nav>
+
+    <!-- WRITE -->
+    <div class="panel" id="panel-write">
+      <div class="card">
+        <textarea id="writeText" placeholder="Capture anything — ideas, notes, things you learned, questions, plans..." rows="4"></textarea>
+        <div class="row">
+          <button id="writeBtn" onclick="saveWrite()">Save to Brain</button>
+          <span class="hint">or Ctrl+Enter</span>
+          <span class="msg" id="writeMsg"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- VOICE -->
+    <div class="panel hidden" id="panel-voice">
+      <div class="card">
+        <h2>Speak a thought</h2>
+        <p class="lead">Tap the microphone and talk. Tap again when you're done. Review the text, fix anything it misheard, then save.</p>
+        <div class="note hidden" id="voiceUnsupported">
+          Voice capture isn't supported in this browser. It works in <b>Chrome</b> and <b>Edge</b> (desktop and Android). Safari may not support it.
+          On iPhone, you can still tap the text box below and use the 🎤 key on your keyboard to dictate.
+        </div>
+        <div class="mic-wrap">
+          <button class="mic" id="micBtn" onclick="toggleMic()" aria-label="Start or stop listening">🎙️</button>
+          <div class="row" style="margin-top:0">
+            <span class="hint" id="micState">Tap to start</span>
+            <select id="voiceLang" aria-label="Language">
+              <option value="en-US">English</option>
+              <option value="es-MX">Español (MX)</option>
+              <option value="es-ES">Español (ES)</option>
+            </select>
+          </div>
+        </div>
+        <textarea id="voiceText" placeholder="Your words appear here..."></textarea>
+        <div class="interim" id="voiceInterim"></div>
+        <div class="row">
+          <button id="voiceBtn" onclick="saveVoice()">Save to Brain</button>
+          <button class="ghost" onclick="clearVoice()">Clear</button>
+          <span class="msg" id="voiceMsg"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- YOUTUBE -->
+    <div class="panel hidden" id="panel-youtube">
+      <div class="card">
+        <h2>Capture a YouTube video</h2>
+        <p class="lead">Paste the link of a video you watched. Then grab its transcript from YouTube and paste it here.</p>
+        <label class="field" for="ytUrl">YouTube link</label>
+        <input type="url" id="ytUrl" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off">
+        <div class="msg" id="ytLookupMsg" style="margin-top:6px"></div>
+
+        <div id="ytFound" class="hidden">
+          <div class="yt-preview">
+            <img id="ytThumb" alt="">
+            <div style="flex:1;min-width:0">
+              <label class="field" for="ytTitle" style="margin-top:0">Title</label>
+              <input type="text" id="ytTitle" placeholder="Video title">
+              <div class="yt-meta" id="ytAuthor"></div>
+            </div>
+          </div>
+
+          <div class="note" style="margin-top:16px">
+            <b>How to get the transcript</b> (browsers aren't allowed to fetch it for you yet. That arrives in Level 3):
+            <ol>
+              <li>Click <b>Get Transcript</b> below. The video opens in a new tab.</li>
+              <li>Under the video, click <b>...more</b> in the description, then <b>Show transcript</b>.</li>
+              <li>Click inside the transcript panel, select all the text (drag, or Ctrl+A / Cmd+A while it's focused), and copy it.</li>
+              <li>Come back here and paste it into the box below.</li>
+            </ol>
+          </div>
+          <a class="btn ghost" id="ytOpen" target="_blank" rel="noopener">▶ Get Transcript</a>
+
+          <label class="field" for="ytTranscript">Transcript</label>
+          <textarea id="ytTranscript" class="tall" placeholder="Paste the transcript here..."></textarea>
+          <div class="row" style="justify-content:space-between">
+            <label class="check"><input type="checkbox" id="ytClean" checked> Remove timestamps when saving</label>
+            <span class="hint" id="ytCount"></span>
+          </div>
+          <div class="row">
+            <button id="ytBtn" onclick="saveYouTube()">Save to Brain</button>
+            <button class="ghost" onclick="clearYouTube()">Clear</button>
+            <span class="msg" id="ytMsg"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PDF -->
+    <div class="panel hidden" id="panel-pdf">
+      <div class="card">
+        <h2>Capture a PDF</h2>
+        <p class="lead">The text is pulled out right here in your browser. The file itself never leaves your device; only the text gets saved.</p>
+        <div class="drop" id="dropZone">
+          <span class="big">📄</span>
+          <b>Drop a PDF here</b><br>or tap to choose a file
+        </div>
+        <input type="file" id="pdfFile" accept="application/pdf,.pdf" class="hidden">
+        <div id="pdfProgressWrap" class="hidden">
+          <div class="progress"><div id="pdfBar"></div></div>
+          <div class="hint" id="pdfProgressText" style="margin-top:6px"></div>
+        </div>
+        <div id="pdfReview" class="hidden">
+          <label class="field" for="pdfName">Name</label>
+          <input type="text" id="pdfName">
+          <label class="field" for="pdfText">Extracted text (edit before saving if you want)</label>
+          <textarea id="pdfText" class="tall"></textarea>
+          <div class="row" style="justify-content:flex-end"><span class="hint" id="pdfCount"></span></div>
+          <div class="row">
+            <button id="pdfBtn" onclick="savePdf()">Save to Brain</button>
+            <button class="ghost" onclick="clearPdf()">Clear</button>
+          </div>
+        </div>
+        <div class="msg" id="pdfMsg" style="margin-top:10px"></div>
+      </div>
+    </div>
+
+    <!-- URL -->
+    <div class="panel hidden" id="panel-url">
+      <div class="card">
+        <h2>Capture an article</h2>
+        <p class="lead">Paste the article's address, then paste its text.</p>
+        <div class="note">
+          Browsers block one website from reading another website's pages, for good security reasons. So for now you open the article, select its text, copy it, and paste it below. In Level 3 you'll build a small server that does this part for you.
+        </div>
+        <label class="field" for="urlInput">Article link</label>
+        <input type="url" id="urlInput" placeholder="https://..." autocomplete="off">
+        <div class="row" style="margin-top:8px"><a class="btn ghost small hidden" id="urlOpen" target="_blank" rel="noopener">Open article in new tab ↗</a></div>
+        <label class="field" for="urlTitle">Title (optional)</label>
+        <input type="text" id="urlTitle" placeholder="What is this article called?">
+        <label class="field" for="urlText">Article text</label>
+        <textarea id="urlText" class="tall" placeholder="Paste the article text here..."></textarea>
+        <div class="row" style="justify-content:flex-end"><span class="hint" id="urlCount"></span></div>
+        <div class="row">
+          <button id="urlBtn" onclick="saveUrl()">Save to Brain</button>
+          <button class="ghost" onclick="clearUrl()">Clear</button>
+          <span class="msg" id="urlMsg"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- SEARCH -->
+    <div class="panel hidden" id="panel-search">
+      <div class="card">
+        <form class="search-row" onsubmit="event.preventDefault(); runSearch()">
+          <input type="search" id="searchInput" placeholder="Search everything you've saved..." autocomplete="off">
+          <button type="submit">Search</button>
+          <button type="button" class="ghost" onclick="clearSearch()">Clear</button>
+        </form>
+      </div>
+      <div class="section-label" id="searchLabel"></div>
+      <div id="searchResults"></div>
+    </div>
+
+    <!-- RECENT -->
+    <div class="panel hidden" id="panel-recent">
+      <div class="section-label">Recent Thoughts</div>
+      <div id="recentList"><div class="empty">Loading...</div></div>
+    </div>
+
+  </section>
 </div>
+
 <script>
+  // =====================================================================
+  //  Setup
+  // =====================================================================
+  const $ = id => document.getElementById(id)
   let db = null
+  let user = null
+  let activeUserId = null
+  let recentStale = true
+  const PDFJS_VERSION = '3.11.174'
+  const PDFJS_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/' + PDFJS_VERSION + '/'
+
+  function setStatus(state, text) {
+    $('dot').className = 'dot' + (state ? ' ' + state : '')
+    $('statusText').textContent = text
+  }
 
   function showBanner(html) {
-    const b = document.getElementById('banner')
+    const b = $('banner')
     b.innerHTML = html
     b.style.display = 'block'
-    document.getElementById('dot').className = 'dot error'
-    document.getElementById('statusText').textContent = 'Not connected'
+    setStatus('error', 'Not connected')
+  }
+
+  function flash(id, text, kind) {
+    const el = $(id)
+    el.textContent = text
+    el.className = 'msg ' + (kind || '')
+    if (kind === 'ok') setTimeout(() => { if (el.textContent === text) { el.textContent = ''; el.className = 'msg' } }, 4000)
   }
 
   async function init() {
     if (typeof SUPABASE_URL === 'undefined' || SUPABASE_URL.includes('PASTE_YOUR')) {
       showBanner('Setup not complete. Open <code>config.js</code> and replace the two placeholder values with your Supabase URL and anon key.')
-      document.getElementById('list').innerHTML = ''
       return
     }
     try {
       db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    } catch (e) {
+      showBanner('Could not start the database connection.<br><br>Error: <code>' + esc(e.message) + '</code>')
+      return
+    }
+
+    // Swap between the login screen and the app whenever sign-in state changes.
+    // (The work is deferred with setTimeout because calling Supabase from
+    // inside this callback can lock up supabase-js.)
+    db.auth.onAuthStateChange((event, session) => {
+      setTimeout(() => applySession(session), 0)
+    })
+
+    const { data } = await db.auth.getSession()
+    applySession(data.session)
+  }
+
+  async function applySession(session) {
+    const newId = session && session.user ? session.user.id : null
+    if (newId === activeUserId && newId !== null) { user = session.user; return }
+    activeUserId = newId
+
+    if (!session) {
+      user = null
+      $('appScreen').classList.add('hidden')
+      $('signOutBtn').classList.add('hidden')
+      $('authScreen').classList.remove('hidden')
+      $('recentList').innerHTML = ''
+      $('searchResults').innerHTML = ''
+      $('searchLabel').textContent = ''
+      recentStale = true
+      await checkConnection(false)
+      return
+    }
+
+    user = session.user
+    $('authScreen').classList.add('hidden')
+    $('appScreen').classList.remove('hidden')
+    $('signOutBtn').classList.remove('hidden')
+    recentStale = true
+    await checkConnection(true)
+    if (currentTab === 'recent') loadRecent()
+  }
+
+  async function checkConnection(signedIn) {
+    try {
       const { error } = await db.from('thoughts').select('id').limit(1)
       if (error) throw error
-      document.getElementById('dot').className = 'dot connected'
-      document.getElementById('statusText').textContent = 'Connected to your database'
-      document.getElementById('saveBtn').disabled = false
-      await load()
+      $('banner').style.display = 'none'
+      setStatus('connected', signedIn
+        ? 'Connected · signed in as ' + user.email
+        : 'Connected · please sign in')
     } catch (e) {
-      showBanner('Could not connect to your database.<br><br>Error: <code>' + e.message + '</code><br><br>Check that your URL and anon key in <code>config.js</code> are correct and that you ran the migration SQL in Supabase.')
-      document.getElementById('list').innerHTML = ''
+      showBanner('Could not connect to your database.<br><br>Error: <code>' + esc(e.message) + '</code><br><br>Check that your URL and anon key in <code>config.js</code> are correct, and that your Supabase project is not paused.')
     }
   }
 
-  async function save() {
-    const input = document.getElementById('input')
-    const text = input.value.trim()
-    if (!text) return
-    const btn = document.getElementById('saveBtn')
-    const msg = document.getElementById('saveMsg')
+  // =====================================================================
+  //  Login
+  // =====================================================================
+  let authMode = 'signin'
+
+  function setAuthMode(mode) {
+    authMode = mode
+    const signup = mode === 'signup'
+    $('authTitle').textContent = signup ? 'Create your account' : 'Sign in to your brain'
+    $('authLead').textContent = signup
+      ? 'This account is only for you. Pick a password of at least 6 characters.'
+      : "Your thoughts are private. Only you can see them once you're signed in."
+    $('authBtn').textContent = signup ? 'Create account' : 'Sign in'
+    $('authPassword').autocomplete = signup ? 'new-password' : 'current-password'
+    $('authSwitch').innerHTML = signup
+      ? 'Already have an account? <a onclick="setAuthMode(\'signin\')">Sign in</a>'
+      : 'No account yet? <a onclick="setAuthMode(\'signup\')">Create one</a>'
+    flash('authMsg', '')
+  }
+
+  function friendlyAuthError(msg) {
+    const m = (msg || '').toLowerCase()
+    if (m.includes('invalid login')) return 'Wrong email or password.'
+    if (m.includes('already registered') || m.includes('already been registered')) return 'That email already has an account. Switch to "Sign in".'
+    if (m.includes('email not confirmed')) return 'This email is not confirmed. In Supabase, turn off "Confirm email" (Authentication → Sign In / Providers → Email).'
+    if (m.includes('password')) return msg
+    return msg || 'Something went wrong.'
+  }
+
+  async function submitAuth(e) {
+    e.preventDefault()
+    const email = $('authEmail').value.trim()
+    const password = $('authPassword').value
+    const btn = $('authBtn')
     btn.disabled = true
-    btn.textContent = 'Saving...'
-    msg.textContent = ''
-    msg.className = 'save-msg'
+    flash('authMsg', authMode === 'signup' ? 'Creating account...' : 'Signing in...', 'info')
     try {
-      const { error } = await db.from('thoughts').insert({ content: text })
-      if (error) throw error
-      input.value = ''
-      msg.textContent = '✓ Saved'
-      msg.className = 'save-msg ok'
-      await load()
-    } catch (e) {
-      msg.textContent = '✗ ' + e.message
-      msg.className = 'save-msg err'
+      if (authMode === 'signup') {
+        const { data, error } = await db.auth.signUp({ email, password })
+        if (error) throw error
+        if (!data.session) {
+          flash('authMsg', 'Account created, but Supabase wants you to confirm your email first. Check your inbox, or turn off "Confirm email" in Supabase and sign in.', 'info')
+          return
+        }
+      } else {
+        const { error } = await db.auth.signInWithPassword({ email, password })
+        if (error) throw error
+      }
+      $('authPassword').value = ''
+      flash('authMsg', '')
+    } catch (err) {
+      flash('authMsg', friendlyAuthError(err.message), 'err')
     } finally {
       btn.disabled = false
-      btn.textContent = 'Save to Brain'
     }
   }
 
-  async function load() {
-    const list = document.getElementById('list')
-    try {
-      const { data, error } = await db
-        .from('thoughts').select('*')
-        .order('created_at', { ascending: false }).limit(20)
-      if (error) throw error
-      if (!data || data.length === 0) {
-        list.innerHTML = '<div class="empty">No thoughts yet. Write something above.</div>'
-        return
+  async function signOut() {
+    stopMic()
+    await db.auth.signOut()
+  }
+
+  // =====================================================================
+  //  Tabs
+  // =====================================================================
+  let currentTab = 'write'
+  document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => showTab(t.dataset.tab)))
+
+  function showTab(name) {
+    currentTab = name
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name))
+    document.querySelectorAll('.panel').forEach(p => p.classList.toggle('hidden', p.id !== 'panel-' + name))
+    if (name !== 'voice') stopMic()
+    if (name === 'recent' && recentStale) loadRecent()
+    if (name === 'search') setTimeout(() => $('searchInput').focus(), 50)
+  }
+
+  // =====================================================================
+  //  Saving: every capture goes through here
+  // =====================================================================
+  //  content  → the note you see in your lists
+  //  metadata → where it came from (video id, url), structured
+  //  source   → { kind, text }: the full text, stored in thought_sources
+  async function saveThought({ content, metadata, source }) {
+    if (!user) throw new Error('You are signed out. Sign in again.')
+    const row = { content, user_id: user.id }
+    if (metadata) row.metadata = metadata
+
+    const { data, error } = await db.from('thoughts').insert(row).select('id').single()
+    if (error) throw error
+
+    if (source && source.text) {
+      // The thought is already saved. If this part fails, the capture still counts.
+      try {
+        const { error: srcErr } = await db.from('thought_sources').insert({
+          thought_id: data.id,
+          user_id: user.id,
+          source_text: source.text,
+          source_kind: source.kind,
+          char_count: source.text.length,
+          truncated: false
+        })
+        if (srcErr) throw srcErr
+      } catch (e) {
+        console.warn('Saved the thought, but could not save its full source text:', e.message || e)
       }
-      list.innerHTML = data.map(t => `
-        <div class="thought">
-          <div class="thought-text">${esc(t.content)}</div>
-          <div class="thought-time">${fmt(t.created_at)}</div>
-        </div>`).join('')
+    }
+    recentStale = true
+    return data.id
+  }
+
+  async function runSave(btnId, msgId, fn) {
+    const btn = $(btnId)
+    const label = btn.textContent
+    btn.disabled = true
+    btn.textContent = 'Saving...'
+    flash(msgId, '')
+    try {
+      await fn()
+      flash(msgId, '✓ Saved to your brain', 'ok')
+      return true
     } catch (e) {
-      list.innerHTML = '<div class="empty" style="color:#ef4444">Could not load: ' + e.message + '</div>'
+      flash(msgId, '✗ ' + (e.message || e), 'err')
+      return false
+    } finally {
+      btn.disabled = false
+      btn.textContent = label
     }
   }
 
-  document.getElementById('input').addEventListener('keydown', e => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') save()
+  // =====================================================================
+  //  WRITE
+  // =====================================================================
+  async function saveWrite() {
+    const text = $('writeText').value.trim()
+    if (!text) return flash('writeMsg', 'Write something first.', 'err')
+    const ok = await runSave('writeBtn', 'writeMsg', () => saveThought({ content: text }))
+    if (ok) $('writeText').value = ''
+  }
+  $('writeText').addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') saveWrite()
   })
 
-  function esc(s) {
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+  // =====================================================================
+  //  VOICE: Web Speech API, runs in the browser
+  // =====================================================================
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition
+  let rec = null
+  let listening = false
+  let voiceFinal = ''
+
+  if (!SpeechRec) {
+    $('voiceUnsupported').classList.remove('hidden')
+    $('micBtn').disabled = true
+    $('micState').textContent = 'Not available in this browser'
   }
+  $('voiceLang').value = (navigator.language || '').toLowerCase().startsWith('es') ? 'es-MX' : 'en-US'
+
+  function toggleMic() {
+    if (!SpeechRec) return
+    listening ? stopMic() : startMic()
+  }
+
+  function startMic() {
+    const existing = $('voiceText').value.trim()
+    voiceFinal = existing ? existing + ' ' : ''
+    rec = new SpeechRec()
+    rec.lang = $('voiceLang').value
+    rec.continuous = true
+    rec.interimResults = true
+
+    rec.onresult = e => {
+      let interim = ''
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i]
+        if (r.isFinal) voiceFinal += r[0].transcript.trim() + ' '
+        else interim += r[0].transcript
+      }
+      $('voiceText').value = voiceFinal
+      $('voiceInterim').textContent = interim
+    }
+    rec.onerror = e => {
+      if (e.error === 'no-speech' || e.error === 'aborted') return
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        flash('voiceMsg', 'Microphone is blocked. Click the 🔒 or ⓘ icon next to the address bar and allow the microphone, then try again.', 'err')
+      } else if (e.error === 'network') {
+        flash('voiceMsg', "Voice recognition needs an internet connection and couldn't reach its service.", 'err')
+      } else {
+        flash('voiceMsg', 'Voice error: ' + e.error, 'err')
+      }
+      listening = false
+      updateMicUi()
+    }
+    rec.onend = () => {
+      // Chrome stops after a pause. Keep going until the user taps stop.
+      if (listening) { try { rec.start() } catch (_) { listening = false; updateMicUi() } }
+      else updateMicUi()
+    }
+
+    try {
+      rec.start()
+      listening = true
+      flash('voiceMsg', '')
+    } catch (e) {
+      flash('voiceMsg', 'Could not start the microphone: ' + e.message, 'err')
+      listening = false
+    }
+    updateMicUi()
+  }
+
+  function stopMic() {
+    if (!rec) return
+    listening = false
+    try { rec.stop() } catch (_) {}
+    $('voiceInterim').textContent = ''
+    updateMicUi()
+  }
+
+  function updateMicUi() {
+    $('micBtn').classList.toggle('listening', listening)
+    $('micState').textContent = listening ? 'Listening… tap to stop' : 'Tap to start'
+  }
+
+  async function saveVoice() {
+    stopMic()
+    const text = $('voiceText').value.trim()
+    if (!text) return flash('voiceMsg', 'Nothing to save yet. Tap the mic and speak.', 'err')
+    const ok = await runSave('voiceBtn', 'voiceMsg', () => saveThought({ content: '🎙️ Voice: ' + text }))
+    if (ok) clearVoice(true)
+  }
+
+  function clearVoice(keepMsg) {
+    stopMic()
+    $('voiceText').value = ''
+    $('voiceInterim').textContent = ''
+    voiceFinal = ''
+    if (!keepMsg) flash('voiceMsg', '')
+  }
+
+  // =====================================================================
+  //  YOUTUBE
+  // =====================================================================
+  let ytVideoId = null
+  let ytTimer = null
+
+  function extractVideoId(raw) {
+    const s = (raw || '').trim()
+    if (!s) return null
+    if (/^[\w-]{11}$/.test(s)) return s
+    try {
+      const u = new URL(/^https?:\/\//i.test(s) ? s : 'https://' + s)
+      const host = u.hostname.replace(/^www\.|^m\.|^music\./, '')
+      let id = null
+      if (host === 'youtu.be') id = u.pathname.split('/')[1]
+      else if (host.endsWith('youtube.com') || host.endsWith('youtube-nocookie.com')) {
+        id = u.searchParams.get('v')
+        if (!id) {
+          const m = u.pathname.match(/^\/(?:shorts|embed|live|v)\/([\w-]{11})/)
+          if (m) id = m[1]
+        }
+      }
+      return id && /^[\w-]{11}$/.test(id) ? id : null
+    } catch (_) { return null }
+  }
+
+  $('ytUrl').addEventListener('input', () => {
+    clearTimeout(ytTimer)
+    ytTimer = setTimeout(ytLookup, 400)
+  })
+
+  async function ytLookup() {
+    const raw = $('ytUrl').value
+    const id = extractVideoId(raw)
+    if (!raw.trim()) { $('ytFound').classList.add('hidden'); flash('ytLookupMsg', ''); ytVideoId = null; return }
+    if (!id) { $('ytFound').classList.add('hidden'); flash('ytLookupMsg', "That doesn't look like a YouTube video link.", 'err'); ytVideoId = null; return }
+    if (id === ytVideoId) return
+    ytVideoId = id
+
+    const watchUrl = 'https://www.youtube.com/watch?v=' + id
+    $('ytThumb').src = 'https://i.ytimg.com/vi/' + id + '/hqdefault.jpg'
+    $('ytOpen').href = watchUrl
+    $('ytTitle').value = ''
+    $('ytAuthor').textContent = ''
+    $('ytFound').classList.remove('hidden')
+    flash('ytLookupMsg', 'Looking up the video...', 'info')
+
+    try {
+      const r = await fetch('https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent(watchUrl))
+      if (!r.ok) throw new Error('status ' + r.status)
+      const info = await r.json()
+      if (ytVideoId !== id) return
+      $('ytTitle').value = decodeEntities(info.title || '')
+      $('ytAuthor').textContent = info.author_name ? 'by ' + decodeEntities(info.author_name) : ''
+      flash('ytLookupMsg', '')
+    } catch (e) {
+      if (ytVideoId !== id) return
+      flash('ytLookupMsg', "Couldn't fetch the title automatically. Type it in yourself.", 'info')
+    }
+  }
+
+  // YouTube's transcript panel copies as alternating "0:05" / text lines.
+  function cleanTranscript(text) {
+    const timeOnly = /^\(?\d{1,2}(?::\d{2}){1,2}\)?$/
+    const spokenTime = /^\d+\s+(?:hours?|minutes?|seconds?)(?:,?\s+\d+\s+(?:hours?|minutes?|seconds?))*$/i
+    return text
+      .split(/\r?\n/)
+      .map(l => l.trim())
+      .filter(l => l && !timeOnly.test(l) && !spokenTime.test(l))
+      .map(l => l.replace(/^\(?\d{1,2}(?::\d{2}){1,2}\)?\s+/, ''))
+      .join(' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+  }
+
+  $('ytTranscript').addEventListener('input', () => {
+    const n = $('ytTranscript').value.length
+    $('ytCount').textContent = n ? n.toLocaleString() + ' characters' : ''
+  })
+
+  async function saveYouTube() {
+    const id = ytVideoId
+    if (!id) return flash('ytMsg', 'Paste a YouTube link first.', 'err')
+    let transcript = decodeEntities($('ytTranscript').value).trim()
+    if ($('ytClean').checked) transcript = cleanTranscript(transcript)
+    if (!transcript) return flash('ytMsg', 'Paste the transcript first.', 'err')
+    const title = $('ytTitle').value.trim() || 'YouTube video'
+    const content = '📹 YouTube: ' + title + '\nhttps://www.youtube.com/watch?v=' + id + '\n\n' + transcript
+
+    const ok = await runSave('ytBtn', 'ytMsg', () => saveThought({
+      content,
+      metadata: { video_id: id },
+      source: { kind: 'youtube_transcript', text: transcript }
+    }))
+    if (ok) clearYouTube(true)
+  }
+
+  function clearYouTube(keepMsg) {
+    $('ytUrl').value = ''
+    $('ytTranscript').value = ''
+    $('ytTitle').value = ''
+    $('ytCount').textContent = ''
+    $('ytFound').classList.add('hidden')
+    flash('ytLookupMsg', '')
+    ytVideoId = null
+    if (!keepMsg) flash('ytMsg', '')
+  }
+
+  // =====================================================================
+  //  PDF: PDF.js extracts the text in the browser, no server needed
+  // =====================================================================
+  let pdfjsLoading = null
+
+  function loadPdfJs() {
+    if (window.pdfjsLib) return Promise.resolve()
+    if (!pdfjsLoading) {
+      pdfjsLoading = new Promise((resolve, reject) => {
+        const s = document.createElement('script')
+        s.src = PDFJS_BASE + 'pdf.min.js'
+        s.onload = () => {
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_BASE + 'pdf.worker.min.js'
+          resolve()
+        }
+        s.onerror = () => { pdfjsLoading = null; reject(new Error('Could not load the PDF reader. Check your internet connection.')) }
+        document.head.appendChild(s)
+      })
+    }
+    return pdfjsLoading
+  }
+
+  const drop = $('dropZone')
+  drop.addEventListener('click', () => $('pdfFile').click())
+  $('pdfFile').addEventListener('change', e => handlePdf(e.target.files[0]))
+  ;['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over') }))
+  ;['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over') }))
+  drop.addEventListener('drop', e => handlePdf(e.dataTransfer.files[0]))
+  // Stop a PDF dropped anywhere else from replacing the whole app.
+  window.addEventListener('dragover', e => e.preventDefault())
+  window.addEventListener('drop', e => e.preventDefault())
+
+  function pdfProgress(pct, text) {
+    $('pdfProgressWrap').classList.remove('hidden')
+    $('pdfBar').style.width = pct + '%'
+    $('pdfProgressText').textContent = text
+  }
+
+  async function handlePdf(file) {
+    if (!file) return
+    flash('pdfMsg', '')
+    $('pdfReview').classList.add('hidden')
+    if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) {
+      return flash('pdfMsg', 'That file is not a PDF.', 'err')
+    }
+    try {
+      pdfProgress(3, 'Loading the PDF reader...')
+      await loadPdfJs()
+      pdfProgress(8, 'Opening ' + file.name + '...')
+      const buf = await file.arrayBuffer()
+      const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise
+      const pages = []
+      for (let p = 1; p <= pdf.numPages; p++) {
+        const page = await pdf.getPage(p)
+        const tc = await page.getTextContent()
+        let s = ''
+        for (const item of tc.items) {
+          if (typeof item.str !== 'string') continue
+          s += item.str + (item.hasEOL ? '\n' : ' ')
+        }
+        pages.push(s.replace(/[ \t]{2,}/g, ' ').replace(/ *\n */g, '\n').trim())
+        pdfProgress(8 + Math.round((p / pdf.numPages) * 92), 'Reading page ' + p + ' of ' + pdf.numPages + '...')
+      }
+      const text = decodeEntities(pages.filter(Boolean).join('\n\n')).replace(/\n{3,}/g, '\n\n').trim()
+      $('pdfProgressText').textContent = 'Done: ' + pdf.numPages + ' page' + (pdf.numPages === 1 ? '' : 's') + '.'
+
+      if (!text) {
+        return flash('pdfMsg', 'No text found in this PDF. It is probably a scanned image, which needs OCR (text recognition). That is not part of this level.', 'err')
+      }
+      $('pdfName').value = file.name
+      $('pdfText').value = text
+      $('pdfCount').textContent = text.length.toLocaleString() + ' characters'
+      $('pdfReview').classList.remove('hidden')
+    } catch (e) {
+      const msg = e && e.name === 'PasswordException'
+        ? 'This PDF is password-protected. Open it, save an unlocked copy, and try again.'
+        : 'Could not read this PDF: ' + (e.message || e)
+      flash('pdfMsg', msg, 'err')
+    } finally {
+      $('pdfFile').value = ''
+    }
+  }
+
+  async function savePdf() {
+    const text = decodeEntities($('pdfText').value).trim()
+    if (!text) return flash('pdfMsg', 'There is no text to save.', 'err')
+    const name = $('pdfName').value.trim() || 'Untitled PDF'
+    const ok = await runSave('pdfBtn', 'pdfMsg', () => saveThought({ content: '📄 PDF: ' + name + '\n\n' + text }))
+    if (ok) clearPdf(true)
+  }
+
+  function clearPdf(keepMsg) {
+    $('pdfText').value = ''
+    $('pdfName').value = ''
+    $('pdfCount').textContent = ''
+    $('pdfReview').classList.add('hidden')
+    $('pdfProgressWrap').classList.add('hidden')
+    if (!keepMsg) flash('pdfMsg', '')
+  }
+
+  // =====================================================================
+  //  URL
+  // =====================================================================
+  function normalizeUrl(raw) {
+    const s = (raw || '').trim()
+    if (!s) return null
+    try {
+      const u = new URL(/^https?:\/\//i.test(s) ? s : 'https://' + s)
+      return u.hostname.includes('.') ? u.href : null
+    } catch (_) { return null }
+  }
+
+  $('urlInput').addEventListener('input', () => {
+    const u = normalizeUrl($('urlInput').value)
+    $('urlOpen').classList.toggle('hidden', !u)
+    if (u) $('urlOpen').href = u
+  })
+  $('urlText').addEventListener('input', () => {
+    const n = $('urlText').value.length
+    $('urlCount').textContent = n ? n.toLocaleString() + ' characters' : ''
+  })
+
+  async function saveUrl() {
+    const url = normalizeUrl($('urlInput').value)
+    if (!url) return flash('urlMsg', 'Paste a valid link first (starting with https://).', 'err')
+    const text = decodeEntities($('urlText').value).replace(/\n{3,}/g, '\n\n').trim()
+    if (!text) return flash('urlMsg', 'Paste the article text first.', 'err')
+    const title = decodeEntities($('urlTitle').value).trim() || new URL(url).hostname.replace(/^www\./, '')
+    const content = '🔗 Web: ' + title + '\n' + url + '\n\n' + text
+
+    const ok = await runSave('urlBtn', 'urlMsg', () => saveThought({
+      content,
+      metadata: { url },
+      source: { kind: 'web', text }
+    }))
+    if (ok) clearUrl(true)
+  }
+
+  function clearUrl(keepMsg) {
+    $('urlInput').value = ''
+    $('urlTitle').value = ''
+    $('urlText').value = ''
+    $('urlCount').textContent = ''
+    $('urlOpen').classList.add('hidden')
+    if (!keepMsg) flash('urlMsg', '')
+  }
+
+  // =====================================================================
+  //  SEARCH: keyword match with ilike (case-insensitive)
+  // =====================================================================
+  async function runSearch() {
+    const q = $('searchInput').value.trim()
+    const box = $('searchResults')
+    if (!q) { clearSearch(); return }
+    $('searchLabel').textContent = 'Searching...'
+    box.innerHTML = ''
+    try {
+      const pattern = '%' + q.replace(/[\\%_]/g, m => '\\' + m) + '%'
+      const { data, error } = await db
+        .from('thoughts').select('id, content, created_at')
+        .ilike('content', pattern)
+        .order('created_at', { ascending: false })
+        .limit(50)
+      if (error) throw error
+      $('searchLabel').textContent = data.length
+        ? data.length + (data.length === 50 ? '+' : '') + ' result' + (data.length === 1 ? '' : 's') + ' for "' + q + '"'
+        : ''
+      box.innerHTML = data.length
+        ? data.map(t => renderThought(t, q)).join('')
+        : '<div class="empty">Nothing matches "' + esc(q) + '".</div>'
+    } catch (e) {
+      $('searchLabel').textContent = ''
+      box.innerHTML = '<div class="empty" style="color:#ef4444">Search failed: ' + esc(e.message) + '</div>'
+    }
+  }
+
+  function clearSearch() {
+    $('searchInput').value = ''
+    $('searchResults').innerHTML = ''
+    $('searchLabel').textContent = ''
+    $('searchInput').focus()
+  }
+
+  // =====================================================================
+  //  RECENT
+  // =====================================================================
+  async function loadRecent() {
+    const list = $('recentList')
+    if (!user) return
+    recentStale = false
+    list.innerHTML = '<div class="empty">Loading...</div>'
+    try {
+      const { data, error } = await db
+        .from('thoughts').select('id, content, created_at')
+        .order('created_at', { ascending: false }).limit(20)
+      if (error) throw error
+      list.innerHTML = data && data.length
+        ? data.map(t => renderThought(t)).join('')
+        : '<div class="empty">No thoughts yet. Capture something from one of the tabs above.</div>'
+    } catch (e) {
+      recentStale = true
+      list.innerHTML = '<div class="empty" style="color:#ef4444">Could not load: ' + esc(e.message) + '</div>'
+    }
+  }
+
+  // =====================================================================
+  //  Rendering
+  // =====================================================================
+  const LONG = 420
+
+  function renderThought(t, query) {
+    const content = t.content || ''
+    let shown = content
+    // In search results, show the part of a long capture where the match is.
+    if (query && content.length > LONG * 1.5) {
+      const firstLine = content.split('\n')[0]
+      const at = content.toLowerCase().indexOf(query.toLowerCase())
+      if (at > LONG / 2) {
+        const start = Math.max(0, at - 160)
+        shown = firstLine + '\n\n…' + content.slice(start, start + 360) + '…'
+      }
+    }
+    const long = shown.length > LONG
+    const html = query ? highlight(shown, query) : esc(shown)
+    return '<div class="thought">' +
+        '<div class="thought-text' + (long ? ' clamped' : '') + '">' + html + '</div>' +
+        '<div class="thought-foot">' +
+          '<div class="thought-time">' + fmt(t.created_at) + '</div>' +
+          (long ? '<button class="more" onclick="toggleMore(this)">Show more</button>' : '') +
+        '</div>' +
+      '</div>'
+  }
+
+  function toggleMore(btn) {
+    const text = btn.closest('.thought').querySelector('.thought-text')
+    const open = text.classList.toggle('clamped')
+    btn.textContent = open ? 'Show more' : 'Show less'
+  }
+
+  // Split the raw text on the query, escape each piece, then wrap the matches.
+  function highlight(raw, q) {
+    const needle = q.replace(/[.*+?^$(){}|[\]\\]/g, '\\$&')
+    if (!needle) return esc(raw)
+    return raw.split(new RegExp('(' + needle + ')', 'gi'))
+      .map((part, i) => i % 2 ? '<mark>' + esc(part) + '</mark>' : esc(part))
+      .join('')
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+  }
+
   function fmt(iso) {
     return new Date(iso).toLocaleString('en-US', {
       month: 'short', day: 'numeric', year: 'numeric',
       hour: '2-digit', minute: '2-digit'
+    })
+  }
+
+  // =====================================================================
+  //  decodeEntities: PDF text and pasted web text sometimes arrive with
+  //  literal codes like &ntilde; or &rsquo; instead of ñ and ’. This hits
+  //  Spanish hardest. &amp; is decoded LAST, so a double-escaped "&amp;lt;"
+  //  becomes the text "&lt;", never a real "<".
+  // =====================================================================
+  const ENTITIES = {
+    lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
+    rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“',
+    mdash: '—', ndash: '–', hellip: '…',
+    aacute: 'á', eacute: 'é', iacute: 'í', oacute: 'ó', uacute: 'ú', ntilde: 'ñ', uuml: 'ü',
+    Aacute: 'Á', Eacute: 'É', Iacute: 'Í', Oacute: 'Ó', Uacute: 'Ú', Ntilde: 'Ñ', Uuml: 'Ü',
+    iexcl: '¡', iquest: '¿', laquo: '«', raquo: '»', copy: '©', reg: '®', deg: '°'
+  }
+
+  function decodeEntities(text) {
+    if (!text) return ''
+    // One pass for everything except &amp; (a single pass never re-reads its own output)
+    let out = String(text).replace(/&(#\d+|#x[0-9a-f]+|[a-z]+\d*);/gi, (match, name) => {
+      if (name === 'amp' || name === 'AMP') return match
+      if (name[0] === '#') {
+        const code = name[1] === 'x' || name[1] === 'X' ? parseInt(name.slice(2), 16) : parseInt(name.slice(1), 10)
+        if (code === 38) return match            // &#38; is an ampersand; leave it for the last step
+        return code > 0 && code <= 0x10FFFF ? String.fromCodePoint(code) : match
+      }
+      return Object.prototype.hasOwnProperty.call(ENTITIES, name) ? ENTITIES[name] : match
+    })
+    // &amp; LAST
+    out = out.replace(/&amp;|&#38;|&#x26;/gi, '&')
+    return out
+  }
+
+  // =====================================================================
+  //  PWA: register the service worker so the app can be installed
+  // =====================================================================
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(err => console.warn('Service worker not registered:', err.message))
     })
   }
 
