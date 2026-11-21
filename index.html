@@ -175,6 +175,15 @@
     .pdf-item.saved { opacity: 0.55; }
     .pdf-item.saved .pdf-meta { color: #22c55e; }
     .pdf-tools { margin-top: 6px; }
+    .gpt-list { max-height: 420px; overflow-y: auto; margin-top: 10px; border: 1px solid #222; border-radius: 10px; }
+    .gpt-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid #1c1c1c; cursor: pointer; font-size: 0.85rem; color: #ccc; }
+    .gpt-row:last-child { border-bottom: none; }
+    .gpt-row:hover { background: #1a1a1a; }
+    .gpt-row input { accent-color: #6366f1; width: 16px; height: 16px; flex-shrink: 0; }
+    .gpt-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .gpt-meta { flex-shrink: 0; }
+    .gpt-row.imported { opacity: 0.5; cursor: default; }
+    @media (max-width: 480px) { .gpt-row { flex-wrap: wrap; } .gpt-meta { width: 100%; padding-left: 26px; } }
 
     /* ---------- lists ---------- */
     .section-label {
@@ -249,7 +258,8 @@
       <button class="tab active" data-tab="write">✏️ Write</button>
       <button class="tab" data-tab="voice">🎙️ Voice</button>
       <button class="tab" data-tab="youtube">📹 YouTube</button>
-      <button class="tab" data-tab="pdf">📄 PDF</button>
+      <button class="tab" data-tab="pdf">📄 Files</button>
+      <button class="tab" data-tab="chatgpt">💬 ChatGPT</button>
       <button class="tab" data-tab="url">🔗 URL</button>
       <button class="tab" data-tab="search">🔍 Search</button>
       <button class="tab" data-tab="recent">🕒 Recent</button>
@@ -345,13 +355,13 @@
     <!-- PDF -->
     <div class="panel hidden" id="panel-pdf">
       <div class="card">
-        <h2>Capture PDFs</h2>
-        <p class="lead">Drop in one PDF or a whole stack. The text is pulled out right here in your browser. The files themselves never leave your device; only the text gets saved, each PDF as its own thought.</p>
+        <h2>Capture files</h2>
+        <p class="lead">PDF, Word (.docx), and plain text or Markdown (.txt, .md). Drop in one or a whole stack. Everything is read right here in your browser. The files themselves never leave your device; only the text gets saved, each file as its own thought.</p>
         <div class="drop" id="dropZone">
           <span class="big">📄</span>
-          <b>Drop PDFs here</b><br>or tap to choose files (you can pick several)
+          <b>Drop files here</b><br>or tap to choose (you can pick several)
         </div>
-        <input type="file" id="pdfFile" accept="application/pdf,.pdf" multiple class="hidden">
+        <input type="file" id="pdfFile" accept=".pdf,.docx,.txt,.md,.markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown" multiple class="hidden">
         <div id="pdfList"></div>
         <div class="row hidden" id="pdfActions">
           <button id="pdfSaveAll" onclick="savePdfs()">Save all</button>
@@ -359,6 +369,43 @@
           <span class="hint" id="pdfSummary"></span>
         </div>
         <div class="msg" id="pdfMsg" style="margin-top:10px"></div>
+      </div>
+    </div>
+
+    <!-- CHATGPT -->
+    <div class="panel hidden" id="panel-chatgpt">
+      <div class="card">
+        <h2>Import your ChatGPT history</h2>
+        <p class="lead">Bring in conversations you've had with ChatGPT. Each chat becomes its own thought. The file is read here in your browser; only the chats you tick get saved.</p>
+        <div class="note">
+          <b>Get your export:</b>
+          <ol>
+            <li>In ChatGPT, open <b>Settings → Data controls → Export data</b> and confirm.</li>
+            <li>ChatGPT emails you a download link. It can take a few minutes, sometimes longer.</li>
+            <li>Download the <b>.zip</b> file and drop it below. You don't need to unzip it.</li>
+          </ol>
+          For a single chat, you can also copy it and paste it into the ✏️ Write tab.
+        </div>
+        <div class="drop" id="gptDrop">
+          <span class="big">💬</span>
+          <b>Drop your ChatGPT export here</b><br>the .zip file, or conversations.json from inside it
+        </div>
+        <input type="file" id="gptFile" accept=".zip,.json,application/zip,application/json" class="hidden">
+        <div class="msg" id="gptMsg" style="margin-top:10px"></div>
+        <div id="gptPanel" class="hidden">
+          <div class="row">
+            <input type="search" id="gptFilter" placeholder="Filter by title..." autocomplete="off" style="flex:1">
+          </div>
+          <div class="row" style="margin-top:8px">
+            <button class="ghost small" type="button" onclick="gptSelect(true)">Select all</button>
+            <button class="ghost small" type="button" onclick="gptSelect(false)">Select none</button>
+            <span class="hint" id="gptSummary"></span>
+          </div>
+          <div id="gptList" class="gpt-list"></div>
+          <div class="row">
+            <button id="gptImportBtn" onclick="importGpt()">Import</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -850,25 +897,43 @@
   }
 
   // =====================================================================
-  //  PDF: PDF.js extracts the text in the browser, no server needed
+  //  FILES: PDF (PDF.js), Word .docx (mammoth), .txt / .md. All read
+  //  right here in the browser. No server needed; files never leave.
   // =====================================================================
-  let pdfjsLoading = null
+  const MAMMOTH_URL = 'https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js'
+  const JSZIP_URL = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js'
+  const scriptLoads = {}
 
-  function loadPdfJs() {
-    if (window.pdfjsLib) return Promise.resolve()
-    if (!pdfjsLoading) {
-      pdfjsLoading = new Promise((resolve, reject) => {
+  // Load a helper library from the CDN the first time it's needed
+  function loadScript(url, globalName) {
+    if (window[globalName]) return Promise.resolve(window[globalName])
+    if (!scriptLoads[url]) {
+      scriptLoads[url] = new Promise((resolve, reject) => {
         const s = document.createElement('script')
-        s.src = PDFJS_BASE + 'pdf.min.js'
-        s.onload = () => {
-          window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_BASE + 'pdf.worker.min.js'
-          resolve()
-        }
-        s.onerror = () => { pdfjsLoading = null; reject(new Error('Could not load the PDF reader. Check your internet connection.')) }
+        s.src = url
+        s.onload = () => window[globalName] ? resolve(window[globalName]) : reject(new Error('Helper library did not start: ' + globalName))
+        s.onerror = () => { delete scriptLoads[url]; reject(new Error('Could not load a helper library. Check your internet connection.')) }
         document.head.appendChild(s)
       })
     }
-    return pdfjsLoading
+    return scriptLoads[url]
+  }
+
+  async function loadPdfJs() {
+    const lib = await loadScript(PDFJS_BASE + 'pdf.min.js', 'pdfjsLib')
+    lib.GlobalWorkerOptions.workerSrc = PDFJS_BASE + 'pdf.worker.min.js'
+    return lib
+  }
+
+  const FILE_LABELS = { pdf: '📄 PDF', docx: '📝 Word', text: '🗒️ Note' }
+
+  function fileKind(file) {
+    const n = (file.name || '').toLowerCase()
+    if (n.endsWith('.pdf') || file.type === 'application/pdf') return 'pdf'
+    if (n.endsWith('.docx')) return 'docx'
+    if (n.endsWith('.doc')) return 'doc'
+    if (/\.(txt|md|markdown|text)$/.test(n) || file.type === 'text/plain' || file.type === 'text/markdown') return 'text'
+    return null
   }
 
   // Each dropped file becomes an item: queued → reading → ready / error → saved
@@ -882,21 +947,19 @@
   ;['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over') }))
   ;['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over') }))
   drop.addEventListener('drop', e => addPdfFiles(e.dataTransfer.files))
-  // Stop a PDF dropped anywhere else from replacing the whole app.
+  // Stop a file dropped anywhere else from replacing the whole app.
   window.addEventListener('dragover', e => e.preventDefault())
   window.addEventListener('drop', e => e.preventDefault())
-
-  function isPdf(file) {
-    return file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
-  }
 
   function addPdfFiles(fileList) {
     const files = Array.from(fileList || [])
     if (!files.length) return
     flash('pdfMsg', '')
     for (const file of files) {
-      const item = { id: pdfNextId++, file, name: file.name, status: 'queued', text: '', pages: 0, error: '' }
-      if (!isPdf(file)) { item.status = 'error'; item.error = 'Not a PDF' }
+      const kind = fileKind(file)
+      const item = { id: pdfNextId++, file, kind, name: file.name, status: 'queued', text: '', pages: 0, error: '' }
+      if (kind === 'doc') { item.status = 'error'; item.error = 'Old .doc format. Open it in Word and Save As .docx' }
+      else if (!kind) { item.status = 'error'; item.error = 'Not a supported file type' }
       pdfItems.push(item)
       $('pdfList').appendChild(buildPdfItem(item))
       renderPdfItem(item)
@@ -943,7 +1006,7 @@
 
     if (item.status === 'queued') meta.textContent = 'Waiting...'
     else if (item.status === 'reading') { /* meta set by progress updates */ }
-    else if (item.status === 'ready') meta.textContent = item.pages + ' page' + (item.pages === 1 ? '' : 's') + ' · ' + item.text.length.toLocaleString() + ' chars'
+    else if (item.status === 'ready') meta.textContent = (item.pages ? item.pages + ' page' + (item.pages === 1 ? '' : 's') + ' · ' : '') + item.text.length.toLocaleString() + ' chars'
     else if (item.status === 'error') meta.textContent = '✗ ' + item.error
     else if (item.status === 'saved') meta.textContent = '✓ Saved'
 
@@ -965,13 +1028,13 @@
         renderPdfItem(item, 2)
         const el = $('pdf-item-' + item.id)
         try {
-          const result = await extractPdfText(item.file, (pct, text) => {
+          const result = await extractDocText(item, (pct, text) => {
             if (el) el.querySelector('.pdf-meta').textContent = text
             renderPdfItem(item, pct)
           })
           if (!result.text) {
             item.status = 'error'
-            item.error = 'No text found (probably a scanned image)'
+            item.error = item.kind === 'pdf' ? 'No text found (probably a scanned image)' : 'No text found'
           } else {
             item.status = 'ready'
             item.text = result.text
@@ -996,11 +1059,32 @@
     }
   }
 
+  async function extractDocText(item, onProgress) {
+    if (item.kind === 'pdf') return extractPdfText(item.file, onProgress)
+    if (item.kind === 'docx') {
+      onProgress(10, 'Loading Word reader...')
+      const mammoth = await loadScript(MAMMOTH_URL, 'mammoth')
+      onProgress(40, 'Reading...')
+      const result = await mammoth.extractRawText({ arrayBuffer: await item.file.arrayBuffer() })
+      return { text: cleanDocText(result.value), pages: 0 }
+    }
+    onProgress(50, 'Reading...')
+    return { text: cleanDocText(await item.file.text()), pages: 0 }
+  }
+
+  function cleanDocText(t) {
+    return decodeEntities(String(t || ''))
+      .replace(/\r\n?/g, '\n')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  }
+
   async function extractPdfText(file, onProgress) {
     onProgress(3, 'Loading PDF reader...')
-    await loadPdfJs()
+    const pdfjs = await loadPdfJs()
     const buf = await file.arrayBuffer()
-    const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise
+    const pdf = await pdfjs.getDocument({ data: buf }).promise
     const pages = []
     for (let p = 1; p <= pdf.numPages; p++) {
       const page = await pdf.getPage(p)
@@ -1014,8 +1098,9 @@
       onProgress(5 + Math.round((p / pdf.numPages) * 95), 'Page ' + p + ' of ' + pdf.numPages)
     }
     const text = decodeEntities(pages.filter(Boolean).join('\n\n')).replace(/\n{3,}/g, '\n\n').trim()
+    const numPages = pdf.numPages
     try { pdf.destroy() } catch (_) {}
-    return { text, pages: pdf.numPages }
+    return { text, pages: numPages }
   }
 
   function pickedPdfItems() {
@@ -1042,7 +1127,7 @@
     const btn = $('pdfSaveAll')
     if (!btn.dataset.saving) {
       btn.disabled = picked === 0
-      btn.textContent = picked > 1 ? 'Save ' + picked + ' PDFs' : 'Save to Brain'
+      btn.textContent = picked > 1 ? 'Save ' + picked + ' files' : 'Save to Brain'
     }
   }
 
@@ -1060,11 +1145,11 @@
       const item = items[n]
       const el = $('pdf-item-' + item.id)
       btn.textContent = 'Saving ' + (n + 1) + ' of ' + items.length + '...'
-      const name = (el.querySelector('.pdf-name-input').value || '').trim() || item.name || 'Untitled PDF'
+      const name = (el.querySelector('.pdf-name-input').value || '').trim() || item.name || 'Untitled file'
       const text = decodeEntities(el.querySelector('.pdf-text').value).trim()
       if (!text) { failed.push(item.name + ' (no text)'); continue }
       try {
-        await saveThought({ content: '📄 PDF: ' + name + '\n\n' + text })
+        await saveThought({ content: (FILE_LABELS[item.kind] || '📄 File') + ': ' + name + '\n\n' + text })
         item.status = 'saved'
         saved++
       } catch (e) {
@@ -1076,7 +1161,7 @@
     $('pdfClearBtn').disabled = false
     updatePdfSummary()
     if (failed.length) flash('pdfMsg', '✓ Saved ' + saved + '. ✗ Not saved: ' + failed.join('; '), 'err')
-    else flash('pdfMsg', '✓ Saved ' + saved + ' PDF' + (saved === 1 ? '' : 's') + ' to your brain', 'ok')
+    else flash('pdfMsg', '✓ Saved ' + saved + ' file' + (saved === 1 ? '' : 's') + ' to your brain', 'ok')
   }
 
   function clearPdf() {
@@ -1090,6 +1175,251 @@
     Array.from($('pdfList').children).forEach(c => { if (!keep.has(c.id)) c.remove() })
     flash('pdfMsg', '')
     updatePdfSummary()
+  }
+
+  // =====================================================================
+  //  CHATGPT: import your exported history (Settings → Data controls →
+  //  Export data). Read in the browser; only the chats you pick are saved.
+  // =====================================================================
+  let gptConvos = []
+  let gptBusy = false
+
+  const gptDrop = $('gptDrop')
+  gptDrop.addEventListener('click', () => $('gptFile').click())
+  $('gptFile').addEventListener('change', e => { loadGptExport(e.target.files[0]); e.target.value = '' })
+  ;['dragenter', 'dragover'].forEach(ev => gptDrop.addEventListener(ev, e => { e.preventDefault(); gptDrop.classList.add('over') }))
+  ;['dragleave', 'drop'].forEach(ev => gptDrop.addEventListener(ev, e => { e.preventDefault(); gptDrop.classList.remove('over') }))
+  gptDrop.addEventListener('drop', e => loadGptExport(e.dataTransfer.files[0]))
+  $('gptFilter').addEventListener('input', renderGptList)
+
+  async function loadGptExport(file) {
+    if (!file || gptBusy) return
+    flash('gptMsg', 'Reading ' + file.name + '...', 'info')
+    $('gptPanel').classList.add('hidden')
+    try {
+      let raw = []
+      if (/\.zip$/i.test(file.name)) {
+        const JSZip = await loadScript(JSZIP_URL, 'JSZip')
+        const zip = await JSZip.loadAsync(file)
+        const names = Object.keys(zip.files).filter(n => /(^|\/)conversations[^/]*\.json$/i.test(n))
+        if (!names.length) throw new Error("This zip has no conversations.json in it. Make sure it's the ChatGPT export.")
+        for (const n of names) raw = raw.concat(gptToArray(JSON.parse(await zip.file(n).async('string'))))
+      } else if (/\.json$/i.test(file.name)) {
+        raw = gptToArray(JSON.parse(await file.text()))
+      } else {
+        throw new Error('Choose the .zip file ChatGPT emailed you, or the conversations.json inside it.')
+      }
+      gptConvos = raw.map(parseGptConversation).filter(Boolean)
+      gptConvos.sort((a, b) => b.created - a.created)
+      if (!gptConvos.length) throw new Error('No conversations with text were found in that file.')
+      flash('gptMsg', 'Checking which chats are already in your brain...', 'info')
+      const already = await fetchImportedGptKeys()
+      gptConvos.forEach(c => { c.imported = already.has(c.key); c.picked = !c.imported })
+      $('gptFilter').value = ''
+      $('gptPanel').classList.remove('hidden')
+      renderGptList()
+      flash('gptMsg', '')
+    } catch (e) {
+      flash('gptMsg', '✗ ' + ((e && e.message) || e), 'err')
+    }
+  }
+
+  function gptToArray(x) {
+    if (Array.isArray(x)) return x
+    if (x && Array.isArray(x.conversations)) return x.conversations
+    return []
+  }
+
+  // A chat is stored as a tree (edits and regenerations make branches).
+  // Follow the branch you actually ended on, from the last message back.
+  function parseGptConversation(conv) {
+    if (!conv || !conv.mapping) return null
+    const map = conv.mapping
+    let nodeId = conv.current_node
+    if (!nodeId || !map[nodeId]) {
+      const leaves = Object.keys(map).filter(k => !map[k].children || !map[k].children.length)
+      nodeId = leaves.length ? leaves[leaves.length - 1] : null
+    }
+    const chain = []
+    const seen = new Set()
+    while (nodeId && map[nodeId] && !seen.has(nodeId)) {
+      seen.add(nodeId)
+      chain.push(map[nodeId])
+      nodeId = map[nodeId].parent
+    }
+    chain.reverse()
+    const lines = []
+    for (const node of chain) {
+      const m = node.message
+      if (!m || !m.author) continue
+      const role = m.author.role
+      if (role !== 'user' && role !== 'assistant') continue
+      if (m.metadata && m.metadata.is_visually_hidden_from_conversation) continue
+      const text = gptMessageText(m.content)
+      if (!text) continue
+      lines.push((role === 'user' ? 'You' : 'ChatGPT') + ': ' + text)
+    }
+    if (!lines.length) return null
+    const created = Number(conv.create_time) || 0
+    return {
+      key: String(conv.conversation_id || conv.id || ((conv.title || '') + '|' + created)),
+      title: String(conv.title || 'Untitled chat').trim() || 'Untitled chat',
+      created,
+      messages: lines.length,
+      text: lines.join('\n\n'),
+      imported: false,
+      picked: true
+    }
+  }
+
+  function gptMessageText(content) {
+    if (!content) return ''
+    const type = content.content_type
+    if (type && type !== 'text' && type !== 'multimodal_text') return ''
+    let out = ''
+    if (Array.isArray(content.parts)) out = content.parts.filter(p => typeof p === 'string').join('\n')
+    else if (typeof content.text === 'string') out = content.text
+    return out.trim()
+  }
+
+  async function fetchImportedGptKeys() {
+    const keys = new Set()
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await db.from('thoughts').select('metadata')
+        .not('metadata->>chatgpt_id', 'is', null)
+        .range(from, from + 999)
+      if (error) throw error
+      data.forEach(r => { if (r.metadata && r.metadata.chatgpt_id) keys.add(r.metadata.chatgpt_id) })
+      if (data.length < 1000) break
+    }
+    return keys
+  }
+
+  function gptDate(sec) {
+    return sec
+      ? new Date(sec * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : 'No date'
+  }
+
+  function gptVisible() {
+    const q = $('gptFilter').value.trim().toLowerCase()
+    return gptConvos.filter(c => !q || c.title.toLowerCase().includes(q))
+  }
+
+  function renderGptList() {
+    const list = $('gptList')
+    const shown = gptVisible()
+    list.innerHTML = ''
+    if (!shown.length) {
+      list.innerHTML = '<div class="empty">No chats match.</div>'
+      updateGptSummary()
+      return
+    }
+    const frag = document.createDocumentFragment()
+    for (const c of shown) {
+      const row = document.createElement('label')
+      row.className = 'gpt-row' + (c.imported ? ' imported' : '')
+      const box = document.createElement('input')
+      box.type = 'checkbox'
+      box.checked = c.picked
+      box.disabled = c.imported || gptBusy
+      box.addEventListener('change', () => { c.picked = box.checked; updateGptSummary() })
+      const title = document.createElement('span')
+      title.className = 'gpt-title'
+      title.textContent = c.title
+      const meta = document.createElement('span')
+      meta.className = 'hint gpt-meta'
+      meta.textContent = (c.imported ? '✓ In your brain · ' : '') + gptDate(c.created) + ' · ' + c.messages + ' msgs'
+      row.append(box, title, meta)
+      frag.appendChild(row)
+    }
+    list.appendChild(frag)
+    updateGptSummary()
+  }
+
+  function gptSelect(on) {
+    if (gptBusy) return
+    gptVisible().forEach(c => { if (!c.imported) c.picked = on })
+    renderGptList()
+  }
+
+  function updateGptSummary() {
+    const total = gptConvos.length
+    const imported = gptConvos.filter(c => c.imported).length
+    const picked = gptConvos.filter(c => c.picked && !c.imported).length
+    $('gptSummary').textContent = total + ' chats · ' + picked + ' selected' + (imported ? ' · ' + imported + ' already in your brain' : '')
+    const btn = $('gptImportBtn')
+    if (!gptBusy) {
+      btn.disabled = picked === 0
+      btn.textContent = picked === 1 ? 'Import 1 chat' : 'Import ' + picked + ' chats'
+    }
+  }
+
+  // Send chats in small batches so no single request gets too big
+  function gptBatches(items) {
+    const out = []
+    let cur = []
+    let size = 0
+    for (const c of items) {
+      if (cur.length && (cur.length >= 20 || size + c.text.length > 1500000)) { out.push(cur); cur = []; size = 0 }
+      cur.push(c)
+      size += c.text.length
+    }
+    if (cur.length) out.push(cur)
+    return out
+  }
+
+  async function importGpt() {
+    const todo = gptConvos.filter(c => c.picked && !c.imported)
+    if (!todo.length || gptBusy) return
+    if (!user) return flash('gptMsg', '✗ You are signed out. Sign in again.', 'err')
+    gptBusy = true
+    const btn = $('gptImportBtn')
+    btn.disabled = true
+    renderGptList()
+    flash('gptMsg', '')
+    let done = 0
+    let failed = 0
+    try {
+      for (const batch of gptBatches(todo)) {
+        btn.textContent = 'Importing ' + (done + failed + 1) + '–' + (done + failed + batch.length) + ' of ' + todo.length + '...'
+        const rows = batch.map(c => ({
+          user_id: user.id,
+          content: '💬 ChatGPT: ' + c.title + '\n' + gptDate(c.created) + '\n\n' + c.text,
+          metadata: { chatgpt_id: c.key }
+        }))
+        const { data, error } = await db.from('thoughts').insert(rows).select('id, metadata')
+        if (error) {
+          failed += batch.length
+          console.warn('ChatGPT import batch failed:', error.message)
+          continue
+        }
+        const idByKey = new Map(data.map(r => [r.metadata && r.metadata.chatgpt_id, r.id]))
+        const sources = batch.filter(c => idByKey.has(c.key)).map(c => ({
+          thought_id: idByKey.get(c.key),
+          user_id: user.id,
+          source_text: c.text,
+          source_kind: 'chatgpt',
+          char_count: c.text.length,
+          truncated: false
+        }))
+        if (sources.length) {
+          // The chats are already saved. If this part fails, the import still counts.
+          const { error: srcErr } = await db.from('thought_sources').insert(sources)
+          if (srcErr) console.warn('Imported chats, but could not save their full source text:', srcErr.message)
+        }
+        batch.forEach(c => {
+          if (idByKey.has(c.key)) { c.imported = true; c.picked = false; done++ }
+          else failed++
+        })
+      }
+    } finally {
+      gptBusy = false
+      recentStale = true
+      renderGptList()
+    }
+    if (failed) flash('gptMsg', '✓ Imported ' + done + '. ✗ ' + failed + ' could not be saved. Try importing again; finished chats are skipped automatically.', 'err')
+    else flash('gptMsg', '✓ Imported ' + done + ' chat' + (done === 1 ? '' : 's') + ' into your brain', 'ok')
   }
 
   // =====================================================================
